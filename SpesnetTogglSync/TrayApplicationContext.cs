@@ -21,7 +21,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ToolStripMenuItem _statusItem;
     private readonly ToolStripMenuItem _syncNowItem;
     private readonly ToolStripMenuItem _cancelItem;
+    private readonly CycleTrackingPopup _trackingPopup;
     private readonly System.Windows.Forms.Timer _timer;
+    private readonly System.Windows.Forms.Timer _trackingHoverTimer;
     private readonly Control _ui = new();
     private readonly EventWaitHandle _showWindowEvent;
     private readonly RegisteredWaitHandle _showWindowRegistration;
@@ -33,6 +35,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private int _scheduleCheck;
     private string? _lastScheduleError;
     private NoticeKind _notice = NoticeKind.None;
+    private CycleTrackingSnapshot? _tracking;
+    private DateTime _lastTrayMoveUtc;
+    private DateTime _trackingRetryUtc;
+    private int _trackingLoad;
 
     public TrayApplicationContext(bool startInTray, EventWaitHandle showWindowEvent)
     {
@@ -61,6 +67,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _statusItem = new ToolStripMenuItem($"Daily sync at {syncTime}") { Enabled = false };
         var openItem = new ToolStripMenuItem("Open", null, (_, _) => ShowMainForm());
+        var trackingItem = new ToolStripMenuItem("Cycle tracking", null, (_, _) => ShowCycleTracking());
         _syncNowItem = new ToolStripMenuItem("Sync now", null, OnSyncNow);
         _cancelItem = new ToolStripMenuItem("Cancel today's sync", null, (_, _) => CancelToday());
         var exitItem = new ToolStripMenuItem("Exit", null, (_, _) => ExitApplication());
@@ -69,6 +76,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _menu.Items.Add(_statusItem);
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(openItem);
+        _menu.Items.Add(trackingItem);
         _menu.Items.Add(_syncNowItem);
         _menu.Items.Add(_cancelItem);
         _menu.Items.Add(new ToolStripSeparator());
@@ -81,6 +89,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
             Visible = true,
             ContextMenuStrip = _menu
         };
+        _trackingPopup = new CycleTrackingPopup();
+        _trackingPopup.OpenRequested += (_, _) => ShowCycleTracking();
+        _tray.MouseMove += (_, _) => OnTrayMouseMove();
         _tray.MouseDoubleClick += (_, e) =>
         {
             if (e.Button == MouseButtons.Left)
@@ -101,9 +112,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
             Timeout.Infinite,
             false);
 
+        _menu.Opening += (_, _) => _trackingPopup.Hide();
         _timer = new System.Windows.Forms.Timer { Interval = 15_000 };
         _timer.Tick += OnTimerTick;
         _timer.Start();
+        _trackingHoverTimer = new System.Windows.Forms.Timer { Interval = 200 };
+        _trackingHoverTimer.Tick += (_, _) => HideTrackingPopupIfLeft();
+        _trackingHoverTimer.Start();
 
         UpdateTrayStatus();
 
@@ -377,6 +392,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             _configService.ClearSyncProblem();
             NotifyInfo("Sync complete", notice);
+            InvalidateCycleTracking();
         }
     }
 
@@ -504,6 +520,122 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _tray.Text = Clip(text, 63);
     }
 
+    private void OnTrayMouseMove()
+    {
+        _lastTrayMoveUtc = DateTime.UtcNow;
+        var show = !_trackingPopup.Visible;
+        if (_tracking != null)
+        {
+            _trackingPopup.SetText(_statusItem.Text + Environment.NewLine + _tracking.HoverText());
+        }
+        else if (show)
+        {
+            _trackingPopup.SetText(_statusItem.Text + Environment.NewLine + "Loading cycle hours...");
+        }
+
+        if (_tracking is not { IsFresh: true })
+        {
+            _ = LoadCycleTrackingAsync();
+        }
+
+        if (show)
+        {
+            _trackingPopup.ShowNearCursor();
+        }
+    }
+
+    private void HideTrackingPopupIfLeft()
+    {
+        if (!_trackingPopup.Visible)
+        {
+            return;
+        }
+
+        var nearPopup = Rectangle.Inflate(_trackingPopup.Bounds, 16, 28);
+        if (nearPopup.Contains(Cursor.Position))
+        {
+            return;
+        }
+
+        if (DateTime.UtcNow - _lastTrayMoveUtc < TimeSpan.FromMilliseconds(500))
+        {
+            return;
+        }
+
+        _trackingPopup.Hide();
+    }
+
+    private void ShowCycleTracking()
+    {
+        _trackingPopup.Hide();
+        ShowMainForm();
+        _form?.ShowCycleTracking();
+    }
+
+    private void InvalidateCycleTracking()
+    {
+        _tracking = null;
+        _trackingRetryUtc = DateTime.MinValue;
+        _form?.RefreshCycleTracking();
+    }
+
+    private async Task LoadCycleTrackingAsync()
+    {
+        if (_tracking is { IsFresh: true } || DateTime.UtcNow < _trackingRetryUtc)
+        {
+            return;
+        }
+
+        if (Interlocked.Exchange(ref _trackingLoad, 1) == 1)
+        {
+            return;
+        }
+
+        try
+        {
+            var settings = _configService.LoadSettings();
+            if (string.IsNullOrWhiteSpace(settings.TogglApiToken))
+            {
+                _tracking = null;
+                _trackingPopup.SetText(_statusItem.Text + Environment.NewLine + "Configure the Toggl API token to see cycle hours.");
+                return;
+            }
+
+            using var toggl = new TogglApiClient(settings.TogglApiToken, _logger);
+            var snapshot = await CycleTracking.LoadAsync(
+                toggl,
+                BillingCycle.NormalizeStartDay(settings.BillingCycleStartDay),
+                settings.HourlyRate,
+                _appShutdown.Token);
+            if (_exitRequested)
+            {
+                return;
+            }
+
+            _tracking = snapshot;
+            if (_trackingPopup.Visible)
+            {
+                _trackingPopup.SetText(_statusItem.Text + Environment.NewLine + snapshot.HoverText());
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Cycle tracking failed: {ex.Message}");
+            _trackingRetryUtc = DateTime.UtcNow.AddMinutes(1);
+            if (!_exitRequested && _trackingPopup.Visible)
+            {
+                _trackingPopup.SetText(_statusItem.Text + Environment.NewLine + "Cycle hours could not be loaded.");
+            }
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _trackingLoad, 0);
+        }
+    }
+
     private void NotifyIssue(string message)
     {
         _configService.SetSyncProblem(message);
@@ -561,6 +693,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             _configService.ClearSyncProblem();
             UpdateTrayStatus();
+            InvalidateCycleTracking();
         };
 
         if (!_form.Visible)
@@ -705,6 +838,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _appShutdown.Cancel();
             _timer.Stop();
             _timer.Dispose();
+            _trackingHoverTimer.Stop();
+            _trackingHoverTimer.Dispose();
+            _trackingPopup.Dispose();
             _showWindowRegistration.Unregister(null);
             _tray.Visible = false;
             _tray.Dispose();

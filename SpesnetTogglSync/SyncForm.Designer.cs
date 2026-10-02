@@ -25,6 +25,11 @@
             mainTabControl = new TabControl();
             logTabPage = new TabPage();
             LogTextBox = new TextBox();
+            trackingTabPage = new TabPage();
+            trackingHeaderPanel = new Panel();
+            RefreshTrackingButton = new Button();
+            TrackingSummaryLabel = new Label();
+            TrackingChart = new CycleTrackingChart();
             mappingTabPage = new TabPage();
             MappingGrid = new DataGridView();
             SaveMappingsButton = new Button();
@@ -69,6 +74,8 @@
             topPanel.SuspendLayout();
             mainTabControl.SuspendLayout();
             logTabPage.SuspendLayout();
+            trackingTabPage.SuspendLayout();
+            trackingHeaderPanel.SuspendLayout();
             mappingTabPage.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)MappingGrid).BeginInit();
             settingsTabPage.SuspendLayout();
@@ -156,6 +163,7 @@
             // mainTabControl
             // 
             mainTabControl.Controls.Add(logTabPage);
+            mainTabControl.Controls.Add(trackingTabPage);
             mainTabControl.Controls.Add(mappingTabPage);
             mainTabControl.Controls.Add(settingsTabPage);
             mainTabControl.Dock = DockStyle.Fill;
@@ -175,6 +183,56 @@
             logTabPage.TabIndex = 0;
             logTabPage.Text = "Sync Log";
             logTabPage.UseVisualStyleBackColor = true;
+            // 
+            // trackingTabPage
+            // 
+            trackingTabPage.Controls.Add(TrackingChart);
+            trackingTabPage.Controls.Add(trackingHeaderPanel);
+            trackingTabPage.Location = new Point(4, 29);
+            trackingTabPage.Name = "trackingTabPage";
+            trackingTabPage.Padding = new Padding(8);
+            trackingTabPage.Size = new Size(1542, 608);
+            trackingTabPage.TabIndex = 3;
+            trackingTabPage.Text = "Tracking";
+            trackingTabPage.UseVisualStyleBackColor = true;
+            // 
+            // trackingHeaderPanel
+            // 
+            trackingHeaderPanel.Controls.Add(RefreshTrackingButton);
+            trackingHeaderPanel.Controls.Add(TrackingSummaryLabel);
+            trackingHeaderPanel.Dock = DockStyle.Top;
+            trackingHeaderPanel.Location = new Point(8, 8);
+            trackingHeaderPanel.Name = "trackingHeaderPanel";
+            trackingHeaderPanel.Size = new Size(1526, 148);
+            trackingHeaderPanel.TabIndex = 0;
+            // 
+            // RefreshTrackingButton
+            // 
+            RefreshTrackingButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            RefreshTrackingButton.Location = new Point(1380, 8);
+            RefreshTrackingButton.Name = "RefreshTrackingButton";
+            RefreshTrackingButton.Size = new Size(130, 29);
+            RefreshTrackingButton.TabIndex = 1;
+            RefreshTrackingButton.Text = "Refresh";
+            RefreshTrackingButton.UseVisualStyleBackColor = true;
+            RefreshTrackingButton.Click += RefreshTrackingButton_Click;
+            // 
+            // TrackingSummaryLabel
+            // 
+            TrackingSummaryLabel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            TrackingSummaryLabel.Location = new Point(0, 0);
+            TrackingSummaryLabel.Name = "TrackingSummaryLabel";
+            TrackingSummaryLabel.Size = new Size(1364, 148);
+            TrackingSummaryLabel.TabIndex = 0;
+            TrackingSummaryLabel.Text = "Cycle tracking loads when you open this tab.";
+            // 
+            // TrackingChart
+            // 
+            TrackingChart.Dock = DockStyle.Fill;
+            TrackingChart.Location = new Point(8, 156);
+            TrackingChart.Name = "TrackingChart";
+            TrackingChart.Size = new Size(1526, 444);
+            TrackingChart.TabIndex = 1;
             // 
             // LogTextBox
             // 
@@ -605,6 +663,8 @@
             mainTabControl.ResumeLayout(false);
             logTabPage.ResumeLayout(false);
             logTabPage.PerformLayout();
+            trackingHeaderPanel.ResumeLayout(false);
+            trackingTabPage.ResumeLayout(false);
             mappingTabPage.ResumeLayout(false);
             mappingTabPage.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)MappingGrid).EndInit();
@@ -625,6 +685,11 @@
         private TabControl mainTabControl;
         private TabPage logTabPage;
         private TextBox LogTextBox;
+        private TabPage trackingTabPage;
+        private Panel trackingHeaderPanel;
+        private Button RefreshTrackingButton;
+        private Label TrackingSummaryLabel;
+        private CycleTrackingChart TrackingChart;
         private Button SaveMappingsButton;
         private Label MappingDirtyLabel;
         private Button RefreshSpesnetButton;

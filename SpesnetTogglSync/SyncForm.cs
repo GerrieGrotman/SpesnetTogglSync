@@ -32,6 +32,9 @@ public partial class SyncForm : Form
     private CancellationTokenSource? _syncCancellation;
     private bool _mappingsDirty;
     private bool _suppressMappingDirty;
+    private CycleTrackingSnapshot? _trackingSnapshot;
+    private CancellationTokenSource? _trackingCts;
+    private int _trackingLoad;
 
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal Action<string>? OnSyncIssue { get; set; }
@@ -54,6 +57,13 @@ public partial class SyncForm : Form
         _syncActivity = syncActivity;
 
         InitializeComponent();
+        mainTabControl.SelectedIndexChanged += (_, _) =>
+        {
+            if (mainTabControl.SelectedTab == trackingTabPage)
+            {
+                _ = LoadCycleTrackingAsync(force: false);
+            }
+        };
         InitializeMappingGrids();
         UpdateMappingDirtyUi();
         _logger.LogWritten += (_, line) => AppendLogLine(line);
@@ -1220,6 +1230,130 @@ public partial class SyncForm : Form
             _syncActivity.End();
             SetUiEnabled(true);
         }
+    }
+
+    internal void ShowCycleTracking()
+    {
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        if (InvokeRequired)
+        {
+            BeginInvoke(ShowCycleTracking);
+            return;
+        }
+
+        mainTabControl.SelectedTab = trackingTabPage;
+        _ = LoadCycleTrackingAsync(force: false);
+    }
+
+    internal void RefreshCycleTracking()
+    {
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        if (InvokeRequired)
+        {
+            BeginInvoke(RefreshCycleTracking);
+            return;
+        }
+
+        _trackingSnapshot = null;
+        if (mainTabControl.SelectedTab == trackingTabPage)
+        {
+            _ = LoadCycleTrackingAsync(force: true);
+        }
+    }
+
+    private async void RefreshTrackingButton_Click(object sender, EventArgs e)
+    {
+        await LoadCycleTrackingAsync(force: true);
+    }
+
+    private async Task LoadCycleTrackingAsync(bool force)
+    {
+        if (!force && _trackingSnapshot is { IsFresh: true } cached)
+        {
+            BindCycleTracking(cached);
+            return;
+        }
+
+        if (Interlocked.Exchange(ref _trackingLoad, 1) == 1)
+        {
+            return;
+        }
+
+        _trackingCts?.Cancel();
+        _trackingCts?.Dispose();
+        _trackingCts = new CancellationTokenSource();
+        var token = _trackingCts.Token;
+        RefreshTrackingButton.Enabled = false;
+        TrackingSummaryLabel.ForeColor = SystemColors.ControlText;
+        TrackingSummaryLabel.Text = "Loading cycle hours from Toggl...";
+
+        try
+        {
+            var settings = _configService.LoadSettings();
+            if (string.IsNullOrWhiteSpace(settings.TogglApiToken))
+            {
+                TrackingSummaryLabel.Text = "Configure the Toggl API token on the Settings tab.";
+                TrackingChart.SetSnapshot(null);
+                return;
+            }
+
+            using var toggl = new TogglApiClient(settings.TogglApiToken, _logger);
+            var snapshot = await CycleTracking.LoadAsync(
+                toggl,
+                BillingCycle.NormalizeStartDay(settings.BillingCycleStartDay),
+                settings.HourlyRate,
+                token);
+            if (token.IsCancellationRequested || IsDisposed)
+            {
+                return;
+            }
+
+            _trackingSnapshot = snapshot;
+            BindCycleTracking(snapshot);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            _logger.Error($"Cycle tracking failed: {ex.Message}");
+            TrackingSummaryLabel.Text = ex.Message;
+            TrackingChart.SetSnapshot(null);
+        }
+        finally
+        {
+            if (!IsDisposed)
+            {
+                RefreshTrackingButton.Enabled = true;
+            }
+
+            Interlocked.Exchange(ref _trackingLoad, 0);
+        }
+    }
+
+    private void BindCycleTracking(CycleTrackingSnapshot snapshot)
+    {
+        TrackingSummaryLabel.Text = snapshot.DetailText();
+        TrackingSummaryLabel.ForeColor = snapshot.HoursVariance switch
+        {
+            > 0 => Color.FromArgb(22, 110, 52),
+            < 0 => Color.FromArgb(168, 40, 36),
+            _ => SystemColors.ControlText
+        };
+        TrackingChart.SetSnapshot(snapshot);
     }
 
     public bool HasUnsavedMappingChanges => _mappingsDirty;

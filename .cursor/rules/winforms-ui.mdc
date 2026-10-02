@@ -9,7 +9,7 @@ alwaysApply: false
 ## Layout
 
 - Top bar: watermark DateTimePicker, Start Sync, Create report, mock checkbox, status.
-- Tabs: Sync Log, Mapping, Settings.
+- Tabs: Sync Log, Tracking, Mapping, Settings. Tracking shows this cycle's Toggl hours and rands against an 8-hour Monday–Friday target, including a two-line chart (target for the whole cycle, actual through today). The tray menu **Cycle tracking** opens that tab. Hovering the tray icon shows the same summary.
 - Mapping toolbar: Save Mappings, dirty label, Refresh Spesnet Reference Data, Refresh from Toggl.
 - Prefer editing `SyncForm.Designer.cs` for control layout; keep async/event wiring in `SyncForm.cs`.
 - Settings includes Data Directory (writes `config-location.json` on Save Settings; creates folder and missing config files; copies from previous data dir when the new folder lacks them), hourly rate (ZAR), billing-cycle start day (1–31; shorter months use the last day), daily sync time (SAST, default 07:00), billing report folder (empty uses the data directory), invoice number (latest issued; a new period uses the next number and updates it), and the app invoice template (`invoice-template.docx` in the data directory; Import replaces that copy).
