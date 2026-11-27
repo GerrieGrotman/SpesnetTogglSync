@@ -194,6 +194,10 @@ public class SyncService
                 _logger.Error(stoppedMessage);
             }
 
+            var softStopSameDayRunning = blockIsRunning
+                && blockStartUtc is DateTime blockedStart
+                && SouthAfricaClock.Date(blockedStart) == SouthAfricaClock.Today();
+
             return new SyncResult
             {
                 Success = false,
@@ -201,7 +205,8 @@ public class SyncService
                 SyncedCount = syncedCount,
                 SkippedCount = skippedCount,
                 SyncedSeconds = syncedSeconds,
-                LastSyncedStartTime = currentWatermark
+                LastSyncedStartTime = currentWatermark,
+                SoftStopSameDayRunningTimer = softStopSameDayRunning
             };
         }
 

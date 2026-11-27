@@ -136,6 +136,13 @@ public class SyncResult
 
     /// <summary>Hours and earnings for the tray notification, when billing data could be loaded.</summary>
     public string? BillingNotice { get; set; }
+
+    /// <summary>
+    /// Sync stopped only because a timer that started on the current South African calendar day
+    /// is still running. The run still stops (watermark does not pass that entry), but the tray
+    /// should not treat this as a problem icon — today's work is still open.
+    /// </summary>
+    public bool SoftStopSameDayRunningTimer { get; set; }
 }
 
 public class SyncProgressEventArgs : EventArgs

@@ -1192,10 +1192,16 @@ public partial class SyncForm : Form
             var details = string.IsNullOrWhiteSpace(result.BillingNotice)
                 ? result.Message
                 : result.BillingNotice + Environment.NewLine + Environment.NewLine + result.Message;
-            StatusLabel.Text = result.Success && !string.IsNullOrWhiteSpace(result.BillingNotice)
+            StatusLabel.Text = (result.Success || result.SoftStopSameDayRunningTimer)
+                && !string.IsNullOrWhiteSpace(result.BillingNotice)
                 ? result.BillingNotice
                 : result.Message;
-            if (!result.Success)
+            if (result.SoftStopSameDayRunningTimer)
+            {
+                // Same-day open timer: stop the run, but do not raise a tray problem.
+                MessageBox.Show(this, details, "Sync Paused", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            else if (!result.Success)
             {
                 OnSyncIssue?.Invoke(result.Message);
                 MessageBox.Show(this, result.Message, "Sync Failed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -1206,7 +1212,7 @@ public partial class SyncForm : Form
             }
 
             _configService.MarkAutomaticSyncCompletedIfDue();
-            if (result.Success)
+            if (result.Success || result.SoftStopSameDayRunningTimer)
             {
                 OnSyncSucceeded?.Invoke();
             }
