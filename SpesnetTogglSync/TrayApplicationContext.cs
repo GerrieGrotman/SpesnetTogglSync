@@ -380,11 +380,19 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var notice = string.IsNullOrWhiteSpace(result.BillingNotice) ? result.Message : result.BillingNotice;
         _form?.ApplySyncProgress(new SyncProgressEventArgs
         {
-            Message = result.Success ? notice : result.Message,
+            Message = result.Success || result.SoftStopSameDayRunningTimer ? notice : result.Message,
             UpdatedWatermark = result.LastSyncedStartTime
         });
 
-        if (!result.Success)
+        if (result.SoftStopSameDayRunningTimer)
+        {
+            // Same-day open timer is expected during the workday; keep amber/green semantics.
+            _configService.ClearSyncProblem();
+            NotifyInfo("Sync paused", notice);
+            InvalidateCycleTracking();
+            UpdateTrayStatus();
+        }
+        else if (!result.Success)
         {
             NotifyIssue(result.Message);
         }
